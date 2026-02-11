@@ -3,6 +3,8 @@ from app.services.deduplication import deduplication_service
 from app.services.ingestion import ingestion_service
 from app.models.schemas import IngestionResponse, DocumentMetadata
 from datetime import datetime
+from app.models.chat import ChatRequest, ChatResponse
+from app.services.chat import chat_service
 
 router = APIRouter()
 
@@ -64,3 +66,12 @@ async def ingest_document(file: UploadFile = File(...)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+    
+@router.post(
+    "/chat",
+    response_model=ChatResponse,
+    summary="Ask a question to the RAG system",
+    description="Multi-turn conversation with citation support."
+)
+async def chat(request: ChatRequest):
+    return await chat_service.process_query(request.session_id, request.message)

@@ -7,7 +7,7 @@ from fastapi import UploadFile
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import Qdrant
+from langchain_qdrant import QdrantVectorStore
 from langchain_core.documents import Document
 
 # Internal Config
@@ -20,43 +20,60 @@ class IngestionService:
     """
 
     def __init__(self):
-        # 1. Initialize Embeddings (Google Gemini)
-        self.embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/gemini-embedding-001",
-            task_type="retrieval_document",
-            google_api_key=os.getenv("GOOGLE_API_KEY")
-        )
-
-        # 2. Qdrant Connection Params
+        self.api_key = os.getenv("GOOGLE_API_KEY")
         self.qdrant_url = os.getenv("QDRANT_HOST", "qdrant")
         self.qdrant_port = int(os.getenv("QDRANT_PORT", 6333))
-        self.collection_name = "nyx_documents_v2" 
+        self.collection_name = "nyx_documents_v2"
         
-        # 3. Initialize Client (to ensure collection exists)
-        self._ensure_collection_exists()
+        self._is_initialized = False
 
-    def _ensure_collection_exists(self):
+    def _initialize_resources(self):
         """
-        Checks if Qdrant collection exists; creates it if not.
+        Connects to Qdrant and creates the collection if it does not exist.
+        Called ONLY when needed, not at startup.
         """
-        client = QdrantClient(host=self.qdrant_url, port=self.qdrant_port)
-        collections = client.get_collections()
-        exists = any(c.name == self.collection_name for c in collections.collections)
+        if self._is_initialized:
+            return
 
-        if not exists:
-            print(f"Creating Qdrant collection: {self.collection_name}")
-            client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=models.VectorParams(
-                    size=3072, 
-                    distance=models.Distance.COSINE
-                )
+        try:
+            # Initialize Embeddings
+            self.embeddings = GoogleGenerativeAIEmbeddings(
+                model="models/gemini-embedding-001",
+                task_type="retrieval_document",
+                google_api_key=self.api_key
             )
+
+            # Initialize Qdrant Client
+            self.client = QdrantClient(host=self.qdrant_url, port=self.qdrant_port)
+            
+            # Check Collection
+            collections = self.client.get_collections()
+            exists = any(c.name == self.collection_name for c in collections.collections)
+
+            if not exists:
+                print(f"Creating Qdrant collection: {self.collection_name}")
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=models.VectorParams(
+                        size=3072, # Gemini default
+                        distance=models.Distance.COSINE
+                    )
+                )
+            
+            self._is_initialized = True
+            print("--- [Lazy Init] Connection Successful ---")
+            
+        except Exception as e:
+            print(f"CRITICAL ERROR connecting to Qdrant: {e}")
+            raise e
 
     async def process_document(self, file: UploadFile, file_hash: str) -> dict:
         """
         Main pipeline execution method.
         """
+        # A. Lazy Init Check
+        self._initialize_resources()
+
         temp_filename = f"temp_{file.filename}"
         with open(temp_filename, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -71,17 +88,16 @@ class IngestionService:
             # C. Split (Chunking)
             chunks = self._chunk_documents(documents)
 
-            # D. Inject Metadata (Crucial for Citations)
+            # D. Inject Metadata
             for i, chunk in enumerate(chunks):
                 chunk.metadata["file_hash"] = file_hash
                 chunk.metadata["filename"] = file.filename
                 chunk.metadata["chunk_id"] = i
-                # Ensure page number exists
-                page = chunk.metadata.get('page', 0) + 1 # pypdf is 0-indexed
+                page = chunk.metadata.get('page', 0) + 1 
                 chunk.metadata["source"] = f"{file.filename} (Page {page})"
 
-            # E. Indexing (Embed + Store)
-            Qdrant.from_documents(
+            # E. Indexing using langchain-qdrant
+            QdrantVectorStore.from_documents(
                 documents=chunks,
                 embedding=self.embeddings,
                 url=f"http://{self.qdrant_url}:{self.qdrant_port}",
