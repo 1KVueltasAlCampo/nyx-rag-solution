@@ -1,0 +1,13 @@
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
+# IA & LangChain Core
+langchain>=0.1.0
+langchain-google-genai>=0.0.1
+langgraph>=0.0.10
+# Base Vectorial
+qdrant-client>=1.7.0
+# Utilidades
+httpx
+pydantic>=2.0.0

@@ -1,0 +1,44 @@
+services:
+  # --- Vector Database ---
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: nyx-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT_ALLOW_RECOVERY_MODE=true
+
+  # --- Backend (FastAPI) ---
+  api:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nyx-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - qdrant
+    volumes:
+      - ./backend/app:/app/app
+
+  # --- Frontend (React) ---
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nyx-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+
+volumes:
+  qdrant_data:
