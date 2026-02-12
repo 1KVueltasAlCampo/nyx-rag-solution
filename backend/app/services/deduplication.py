@@ -11,7 +11,13 @@ class DeduplicationService:
         self._init_db()
 
     def _init_db(self):
-        """Initializes the tracking table if it does not exist."""
+        """
+        Initializes the internal SQLite tracking database.
+
+        Creates the 'processed_files' table if it doesn't exist to persistently 
+        store file hashes across application restarts. This ensures incremental ingestion 
+        is maintained even after container rebuilds.
+        """
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute('''
@@ -25,11 +31,33 @@ class DeduplicationService:
         conn.close()
 
     def calculate_hash(self, file_content: bytes) -> str:
-        """Calculates the MD5 hash of the file's binary content."""
+        """
+        Computes a cryptographic MD5 hash of the file's binary content.
+
+        Used to generate a unique fingerprint for the file, allowing the system 
+        to identify duplicate content regardless of the filename.
+
+        Args:
+            file_content (bytes): The raw binary content of the uploaded file.
+
+        Returns:
+            str: The hexadecimal MD5 hash string.
+        """
         return hashlib.md5(file_content).hexdigest()
 
     def is_duplicate(self, content_hash: str) -> bool:
-        """Checks whether the hash already exists in the database."""
+        """
+        Checks if a file's content hash has already been processed.
+
+        Queries the SQLite database to prevent redundant embedding generation 
+        and storage costs for files that are already indexed.
+
+        Args:
+            content_hash (str): The pre-calculated MD5 hash of the file.
+
+        Returns:
+            bool: True if the file exists in the database, False otherwise.
+        """
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute('SELECT 1 FROM processed_files WHERE content_hash = ?', (content_hash,))
@@ -38,7 +66,16 @@ class DeduplicationService:
         return result is not None
 
     def register_file(self, content_hash: str, filename: str):
-        """Registers a successfully processed file."""
+        """
+        Records a successfully processed file into the tracking database.
+
+        Called at the end of the ingestion pipeline to mark the file hash as 'seen'.
+        Handles race conditions gracefully via SQLite constraints.
+
+        Args:
+            content_hash (str): The unique hash of the processed file.
+            filename (str): The original name of the file (for logging purposes).
+        """
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         try:

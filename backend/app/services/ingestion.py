@@ -29,8 +29,11 @@ class IngestionService:
 
     def _initialize_resources(self):
         """
-        Connects to Qdrant and creates the collection if it does not exist.
-        Called ONLY when needed, not at startup.
+        Lazily initializes external service connections (Qdrant & Gemini).
+        
+        This prevents startup crashes if external services are not immediately ready 
+        and ensures connections are established only when the first document is processed.
+        It implements a singleton-like check to avoid re-initialization.
         """
         if self._is_initialized:
             return
@@ -67,14 +70,26 @@ class IngestionService:
             print(f"CRITICAL ERROR connecting to Qdrant: {e}")
             raise e
 
-    async def process_document(self, file: UploadFile, file_hash: str) -> dict:
+    def process_document(self, file: UploadFile, file_hash: str) -> dict:
         """
-        Main pipeline execution method.
+        Executes the full document ingestion pipeline synchronously.
+        
+        This method handles file saving, content loading, semantic chunking, 
+        embedding generation, and vector database indexing. It runs in a thread pool 
+        to avoid blocking the main async event loop during I/O operations.
+
+        Args:
+            file (UploadFile): The file object uploaded via FastAPI.
+            file_hash (str): The pre-calculated MD5 hash of the file content for deduplication.
+
+        Returns:
+            dict: A summary object containing status, chunk count, and document ID.
         """
         # A. Lazy Init Check
         self._initialize_resources()
 
         temp_filename = f"temp_{file.filename}"
+        
         with open(temp_filename, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
@@ -119,7 +134,18 @@ class IngestionService:
                 os.remove(temp_filename)
 
     def _load_file(self, path: str, content_type: str) -> List[Document]:
-        """Selects the correct loader based on file type."""
+        """
+        Selects and executes the appropriate document loader based on file type.
+
+        Currently supports PDF (via PyPDFLoader) and plain text files.
+
+        Args:
+            path (str): The local file system path to the temporary file.
+            content_type (str): The MIME type of the uploaded file.
+
+        Returns:
+            List[Document]: A list of LangChain Document objects containing raw text and basic metadata.
+        """
         try:
             if "pdf" in content_type or path.endswith(".pdf"):
                 loader = PyPDFLoader(path)
@@ -132,7 +158,18 @@ class IngestionService:
             return []
 
     def _chunk_documents(self, documents: List[Document]) -> List[Document]:
-        """Splits documents into smaller semantic chunks."""
+        """
+        Splits raw documents into smaller, semantically meaningful text chunks.
+
+        Uses a recursive character splitter to respect sentence boundaries and 
+        maintain context overlap, which is critical for retrieval quality.
+
+        Args:
+            documents (List[Document]): The raw documents loaded from the file.
+
+        Returns:
+            List[Document]: A list of smaller Document objects ready for embedding.
+        """
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,

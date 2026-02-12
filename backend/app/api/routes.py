@@ -17,7 +17,20 @@ router = APIRouter()
 )
 async def ingest_document(file: UploadFile = File(...)):
     """
-    Orchestrates the ingestion flow: Hash Check -> Ingestion -> Registration.
+    Orchestrates the document ingestion pipeline.
+
+    Calculates the file hash to check for duplicates before processing.
+    If the file is new, it proceeds with parsing, chunking, embedding, and indexing.
+
+    Args:
+        file (UploadFile): The binary file (PDF or Text) to be ingested.
+
+    Returns:
+        IngestionResponse: JSON object containing the processing status ('processed' or 'skipped')
+        and metadata about the document.
+
+    Raises:
+        HTTPException: If the ingestion process fails or encounters a server error.
     """
     try:
         # 1. Read file content to calculate hash
@@ -44,7 +57,7 @@ async def ingest_document(file: UploadFile = File(...)):
 
         # 4. Process the Document (The Heavy Lifting)
         # Note: In a real production app, this should be a BackgroundTask to avoid blocking.
-        result = await ingestion_service.process_document(file, file_hash)
+        result = ingestion_service.process_document(file, file_hash)
 
         if result["status"] == "error":
             raise HTTPException(status_code=500, detail=result["message"])
@@ -74,6 +87,21 @@ async def ingest_document(file: UploadFile = File(...)):
     description="Multi-turn conversation with citation support."
 )
 async def chat(request: ChatRequest):
+    """
+    Processes a user query through the RAG pipeline.
+
+    This endpoint manages the conversation flow, including:
+    - Intent classification (Tool Integration).
+    - Semantic retrieval of relevant context.
+    - Prompt construction with history.
+    - Generation of a grounded answer with citations.
+
+    Args:
+        request (ChatRequest): The request body containing 'session_id' and 'message'.
+
+    Returns:
+        ChatResponse: The AI's answer, list of citations, and refusal status.
+    """
     return await chat_service.process_query(request.session_id, request.message)
 
 @router.get(
@@ -82,5 +110,18 @@ async def chat(request: ChatRequest):
     description="Returns the raw text of a specific chunk for evidence verification."
 )
 async def get_chunk(doc_id: str, chunk_index: int):
-    content = await chat_service.get_chunk_text(doc_id, chunk_index)
+    """
+    Retrieves the raw text of a specific document chunk.
+
+    Used by the frontend's Evidence Inspector to verify the source of information
+    displayed in citations. It acts as a transparent verification mechanism.
+
+    Args:
+        doc_id (str): The unique hash identifier of the document.
+        chunk_index (int): The specific index of the chunk within the document.
+
+    Returns:
+        dict: A dictionary containing the 'doc_id', 'chunk_index', and the raw 'content'.
+    """
+    content = chat_service.get_chunk_text(doc_id, chunk_index)
     return {"doc_id": doc_id, "chunk_index": chunk_index, "content": content}
