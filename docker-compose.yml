@@ -26,6 +26,7 @@ services:
       - qdrant
     volumes:
       - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
 
   # --- Frontend (React) ---
   frontend:
