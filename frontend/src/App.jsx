@@ -64,7 +64,7 @@ function App() {
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
 
-    const userMsg = { role: 'user', content: input }
+    const userMsg = { id: uuidv4(), role: 'user', content: input }
     setMessages(prev => [...prev, userMsg])
     setInput("")
     setIsLoading(true)
@@ -84,6 +84,7 @@ function App() {
       const data = await res.json()
       
       const aiMsg = {
+        id: uuidv4(),
         role: 'assistant',
         content: data.answer,
         citations: data.citations,
@@ -93,8 +94,13 @@ function App() {
       setMessages(prev => [...prev, aiMsg])
 
     } catch (err) {
-      console.error(err)
-      setMessages(prev => [...prev, { role: 'assistant', content: "Error: Could not reach NYX Brain.", isError: true }])
+      console.error("Chat Error:", err)
+      setMessages(prev => [...prev, { 
+          id: uuidv4(), 
+          role: 'assistant', 
+          content: "Error: Could not reach NYX Brain.", 
+          isError: true 
+      }])
     } finally {
       setIsLoading(false)
     }
@@ -122,12 +128,13 @@ function App() {
       setUploadStatus(data.status === 'skipped' ? 'duplicate' : 'success')
       
       setMessages(prev => [...prev, {
+        id: uuidv4(),
         role: 'system',
         content: `System: Document "${file.name}" processed successfully. (${data.status})`
       }])
 
     } catch (err) {
-      console.error(err)
+      console.error("Upload Error:", err)
       setUploadStatus('error')
     } finally {
       setIsUploading(false)
@@ -149,6 +156,7 @@ function App() {
         setEvidence(prev => ({ ...prev, loading: false, fullText: data.content }))
 
     } catch (err) {
+        console.error("Evidence Error:", err)
         setEvidence(prev => ({ ...prev, loading: false, fullText: "Error loading source text." }))
     }
   }
@@ -172,14 +180,22 @@ function App() {
         <div className="session-list">
           <h3 style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>History</h3>
           {sessions.map(s => (
-            <div 
+            /* S1082 & S6848 Fix: Changed div to button for accessibility */
+            <button 
               key={s.id}
               onClick={() => selectSession(s.id)}
               className={`session-item ${s.id === currentSessionId ? 'active' : ''}`}
+              style={{
+                  width: '100%',
+                  background: 'none',
+                  border: 'none',
+                  textAlign: 'left',
+                  fontFamily: 'inherit'
+              }}
             >
               <MessageSquare size={14} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -236,18 +252,19 @@ function App() {
                 </div>
             )}
             
-            {messages.map((msg, idx) => (
-                <div key={idx} className={`message ${msg.role}`}>
+            {messages.map((msg) => (
+                /* S6479 Fix: Use unique ID instead of index */
+                <div key={msg.id} className={`message ${msg.role}`}>
                     <div className="bubble">
                         {msg.content}
                         
-                        {/* Render Citations if available */}
                         {msg.citations && msg.citations.length > 0 && (
                             <div className="citations-wrapper">
                                 <span style={{ fontSize: '0.75rem', fontWeight: 'bold', marginRight: 5, color: 'var(--text-secondary)' }}>SOURCES:</span>
                                 {msg.citations.map((cit, cIdx) => (
+                                    /* S6479 Fix: Use combined key (file+chunk) instead of index, or index if necessary but stable */
                                     <button 
-                                        key={cIdx} 
+                                        key={`${cit.source_id}-${cIdx}`} 
                                         className="citation-chip"
                                         onClick={() => handleCitationClick(cit)}
                                     >
@@ -257,7 +274,6 @@ function App() {
                             </div>
                         )}
                         
-                        {/* Render Metadata (Tool Used) */}
                         {msg.toolUsed && (
                             <div style={{ marginTop: 5, fontSize: '0.7rem', opacity: 0.5, fontStyle: 'italic' }}>
                                 Tool: {msg.toolUsed}

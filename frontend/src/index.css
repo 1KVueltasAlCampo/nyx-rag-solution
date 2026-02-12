@@ -168,7 +168,7 @@ body {
 /* Sessions List */
 .session-list { flex: 1; overflow-y: auto; margin-right: -10px; padding-right: 10px; }
 .session-item {
-  display: flex; alignItems: center; gap: 10px;
+  display: flex; align-items: center; gap: 10px;
   padding: 10px; border-radius: 6px;
   cursor: pointer; color: var(--text-secondary);
   font-size: 0.9rem; transition: background 0.2s;
