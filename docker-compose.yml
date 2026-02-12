@@ -39,6 +39,9 @@ services:
       - api
     environment:
       - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ./frontend/src:/app/src
+      - /app/node_modules
 
 volumes:
   qdrant_data:
