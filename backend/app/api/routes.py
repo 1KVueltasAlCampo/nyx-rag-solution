@@ -75,3 +75,12 @@ async def ingest_document(file: UploadFile = File(...)):
 )
 async def chat(request: ChatRequest):
     return await chat_service.process_query(request.session_id, request.message)
+
+@router.get(
+    "/chunks/{doc_id}/{chunk_index}",
+    summary="Get chunk content",
+    description="Returns the raw text of a specific chunk for evidence verification."
+)
+async def get_chunk(doc_id: str, chunk_index: int):
+    content = await chat_service.get_chunk_text(doc_id, chunk_index)
+    return {"doc_id": doc_id, "chunk_index": chunk_index, "content": content}

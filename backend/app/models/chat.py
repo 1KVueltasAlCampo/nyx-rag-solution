@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
+from enum import Enum
 
 # --- Request ---
 class ChatRequest(BaseModel):
@@ -27,3 +28,13 @@ class ChatResponse(BaseModel):
     tool_used: str = "retrieval_augmented_generation"
     is_refusal: bool
     session_id: str
+
+class UserIntent(str, Enum):
+    GREETING = "greeting"
+    SECURITY_RISK = "security_risk"
+    RAG_QUERY = "rag_query"
+
+class IntentClassification(BaseModel):
+    intent: UserIntent
+    confidence: float
+    reasoning: str
